@@ -20,44 +20,24 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
 
-# Virtual environments
-venv/
-env/
-ENV/
-.venv/
-.env/
-
-# Environment variables
+# Environment
 .env
 .env.local
-*.env.*
+.env.*
+.env~*
+.venv/
+venv/
+ENV/
 
-# Dependencies
-node_modules/
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
 
 # Logs
 *.log
-
-# Testing
-.coverage
-htmlcov/
-.coverage.*
-.cache
-.pytest_cache/
-.hypothesis/
-
-# Database
-*.db
-*.db-journal
 
 # OS generated files
 .DS_Store
@@ -67,13 +47,4 @@ htmlcov/
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# Alembic
-alembic/
-
-# Docker
-.dockerignore
-
-# Coverage
-.coverage*
 ```

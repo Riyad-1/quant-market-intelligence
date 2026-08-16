@@ -1,0 +1,24 @@
+Metadata-Version: 2.4
+Name: quant-market-intelligence
+Version: 0.1.0
+Summary: A trading and investing research/knowledge intelligence platform
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn[standard]>=0.30.0
+Requires-Dist: sqlalchemy[asyncio]>=2.0.0
+Requires-Dist: alembic>=1.13.0
+Requires-Dist: asyncpg>=0.29.0
+Requires-Dist: psycopg2-binary>=2.9.9
+Requires-Dist: pydantic>=2.8.0
+Requires-Dist: pydantic-settings>=2.4.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: pgvector>=0.3.0
+Requires-Dist: pytest>=8.3.0
+Requires-Dist: pytest-asyncio>=0.23.0
+Requires-Dist: httpx>=0.27.0
+Provides-Extra: dev
+Requires-Dist: ruff>=0.6.0; extra == "dev"
+Requires-Dist: mypy>=1.11.0; extra == "dev"
+
+# quant-market-intelligence
