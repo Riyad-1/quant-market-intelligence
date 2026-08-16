@@ -25,8 +25,8 @@ router = APIRouter(prefix="/extract", tags=["extraction"])
 
 @router.post("/concepts/from-chunks", response_model=dict)
 async def extract_concepts_from_chunks(
-    chunk_ids: list[int] = Body(..., description="List of chunk IDs to analyze"),
     db: Annotated[AsyncSession, Depends(get_db_session)],
+    chunk_ids: list[int] = Body(..., description="List of chunk IDs to analyze"),
 ) -> dict:
     """Extract trading concepts from specified document chunks.
     
@@ -71,9 +71,9 @@ async def extract_concepts_from_chunks(
 
 @router.post("/strategies/from-chunks", response_model=dict)
 async def extract_strategy_from_chunks(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
     chunk_ids: list[int] = Body(..., description="List of chunk IDs containing strategy information"),
     trader_name: str | None = Body(None, description="Optional name of trader/investor"),
-    db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> dict:
     """Extract a trading strategy from specified document chunks.
     

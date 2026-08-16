@@ -394,3 +394,73 @@ class HypothesisWithProvenance(HypothesisResponse):
     """Hypothesis with full provenance chain."""
 
     evidence_with_chunks: list[dict[str, Any]] = []
+
+
+# ============================================================================
+# Strategy Comparison (Phase 8)
+# ============================================================================
+
+
+class SharedPrinciple(BaseModel):
+    """A principle shared between two strategies."""
+
+    description: str
+    strategy_a_rule_ids: list[int]
+    strategy_b_rule_ids: list[int]
+    confidence: float
+    source_count: int
+
+
+class RuleConflict(BaseModel):
+    """A conflict between rules in two strategies."""
+
+    description: str
+    strategy_a_rule_id: int
+    strategy_a_rule_text: str
+    strategy_b_rule_id: int
+    strategy_b_rule_text: str
+    conflict_type: str  # e.g., "contradictory_operators", "different_thresholds"
+
+
+class UniqueRule(BaseModel):
+    """A rule unique to one strategy."""
+
+    rule_id: int
+    rule_text: str
+    category: str | None
+    classification: str | None
+
+
+class MetadataComparison(BaseModel):
+    """Comparison of strategy metadata."""
+
+    timeframe_match: bool
+    market_regime_match: bool
+    risk_management_similar: bool
+    notes: str
+
+
+class StrategyComparison(BaseModel):
+    """Result of comparing two strategies."""
+
+    strategy_a_id: int
+    strategy_b_id: int
+    similarity_score: float  # 0.0 to 1.0
+    
+    shared_principles: list[SharedPrinciple] = []
+    conflicts: list[RuleConflict] = []
+    
+    unique_to_strategy_a: list[UniqueRule] = []
+    unique_to_strategy_b: list[UniqueRule] = []
+    
+    metadata_comparison: MetadataComparison | None = None
+    summary: str = ""
+
+
+class StrategyComparisonRequest(BaseModel):
+    """Request to compare two strategies."""
+
+    strategy_a_id: int
+    strategy_b_id: int
+    include_metadata: bool = True
+    min_confidence: float = 0.5
