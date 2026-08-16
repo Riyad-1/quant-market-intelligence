@@ -18,20 +18,23 @@ router = APIRouter(prefix="/search", tags=["search"])
 
 @router.get("", response_model=SearchResponse)
 async def search_documents(
-    q: Annotated[str, Query(description="Search query text")],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    q: Annotated[str, Query(description="Search query text")] = "",
     top_k: Annotated[
         int, Query(description="Number of results to return", ge=1, le=100)
     ] = 10,
     document_id: Annotated[int | None, Query(description="Filter by document ID")] = None,
     author: Annotated[str | None, Query(description="Filter by author")] = None,
     document_type: Annotated[str | None, Query(description="Filter by document type")] = None,
-    db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> SearchResponse:
     """Search for relevant document chunks using semantic similarity.
 
     Returns chunks ranked by relevance to the query text.
     Results include source provenance (document, page, section).
     """
+    # Handle query from body or query param
+    if not q:
+        raise HTTPException(status_code=400, detail="Query parameter 'q' is required")
     # Build filters
     filters: dict = {}
     if document_id is not None:

@@ -146,9 +146,9 @@ async def upload_document(
 
 @router.get("", response_model=list[DocumentRead])
 async def list_documents(
+    db: Annotated[AsyncSession, Depends(get_db)],
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[DocumentRead]:
     """List all ingested documents with pagination."""
     result = await db.execute(
@@ -281,9 +281,9 @@ async def list_document_sections(
 )
 async def list_document_chunks(
     document_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[DocumentChunkRead]:
     """List chunks for a document with pagination."""
     # Verify document exists
