@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Integer, MetaData, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, MetaData, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 convention = {
@@ -60,7 +60,7 @@ class Document(Base):
     publication_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
     filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
     hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
     sections: Mapped[list["DocumentSection"]] = relationship(
@@ -118,7 +118,7 @@ class DocumentChunk(Base):
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     chunk_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
     document: Mapped["Document"] = relationship("Document")
