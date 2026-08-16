@@ -128,3 +128,210 @@ class DocumentChunk(Base):
 
     def __repr__(self) -> str:
         return f"<DocumentChunk(id={self.id}, chunk_index={self.chunk_index})>"
+
+
+class Trader(Base):
+    """Represents a trader or investor whose methodology appears in source material."""
+
+    __tablename__ = "traders"
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    known_for: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    era: Mapped[str | None] = mapped_column(String(100), nullable=True)  # e.g., "1980s-present"
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<Trader(id={self.id}, name='{self.name}')>"
+
+
+class Concept(Base):
+    """Represents a trading/investing concept extracted from source material."""
+
+    __tablename__ = "concepts"
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="other"
+    )  # technical, fundamental, risk_management, market_regime, psychology, other
+    review_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="PROPOSED"
+    )  # PROPOSED, REVIEWED, APPROVED, REJECTED
+
+    # Relationships - many-to-many for related concepts
+    related_concepts: Mapped[list["Concept"]] = relationship(
+        "Concept",
+        secondary="concept_relationships",
+        primaryjoin="and_(Concept.id==concept_relationships.c.concept_id)",
+        secondaryjoin="and_(Concept.id==concept_relationships.c.related_concept_id)",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Concept(id={self.id}, name='{self.name}')>"
+
+
+class ConceptRelationship(Base):
+    """Junction table for concept relationships."""
+
+    __tablename__ = "concept_relationships"
+
+    concept_id: Mapped[int] = mapped_column(
+        ForeignKey("concepts.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    related_concept_id: Mapped[int] = mapped_column(
+        ForeignKey("concepts.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    relationship_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # e.g., "related_to", "broader", "narrower"
+
+
+class Strategy(Base):
+    """Represents a trading strategy extracted from source material."""
+
+    __tablename__ = "strategies"
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trader_id: Mapped[int | None] = mapped_column(
+        ForeignKey("traders.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    timeframe: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # e.g., "daily", "weekly", "intraday"
+    strategy_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # e.g., "momentum", "breakout", "trend_following"
+    philosophy: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(nullable=True)
+    review_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="PROPOSED"
+    )  # PROPOSED, REVIEWED, APPROVED, REJECTED
+
+    # Relationships
+    trader: Mapped["Trader | None"] = relationship("Trader")
+
+    def __repr__(self) -> str:
+        return f"<Strategy(id={self.id}, name='{self.name}')>"
+
+
+class RuleClassification(str, Enum):
+    """Classification of how well a rule can be formalized."""
+
+    OBJECTIVE = "objective"  # Can be precisely defined numerically
+    SUBJECTIVE = "subjective"  # Requires human judgment
+    UNRESOLVED = "unresolved"  # Unclear or incomplete in source
+
+
+class RuleCategory(str, Enum):
+    """Category of trading rule."""
+
+    TECHNICAL = "technical"
+    FUNDAMENTAL = "fundamental"
+    MARKET_REGIME = "market_regime"
+    RISK_MANAGEMENT = "risk_management"
+    POSITION_SIZING = "position_sizing"
+    ENTRY = "entry"
+    EXIT = "exit"
+    STOP_LOSS = "stop_loss"
+    CONFIRMATION = "confirmation"
+    SETUP = "setup"
+    OTHER = "other"
+
+
+class StrategyRule(Base):
+    """Represents an individual rule within a trading strategy."""
+
+    __tablename__ = "strategy_rules"
+
+    strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("strategies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    rule_text: Mapped[str] = mapped_column(Text, nullable=False)
+    rule_category: Mapped[str] = mapped_column(
+        String(50), nullable=False, default=RuleCategory.OTHER.value
+    )
+    classification: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=RuleClassification.UNRESOLVED.value
+    )
+    numeric_definition: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Precise numeric rule if applicable
+    rule_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<StrategyRule(id={self.id}, strategy_id={self.strategy_id})>"
+
+
+class EvidenceType(str, Enum):
+    """Type of evidence link."""
+
+    SUPPORTS = "supports"
+    CONTRADICTS = "contradicts"
+    ELABORATES = "elaborates"
+    DEFINES = "defines"
+
+
+class Evidence(Base):
+    """Links extracted knowledge to source document chunks (provenance)."""
+
+    __tablename__ = "evidence"
+
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    evidence_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=EvidenceType.SUPPORTS.value
+    )
+    quote: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Exact quote from the chunk
+    context: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Additional context around the quote
+
+    # Polymorphic relationships - what this evidence supports
+    strategy_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strategies.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    strategy_rule_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strategy_rules.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    concept_id: Mapped[int | None] = mapped_column(
+        ForeignKey("concepts.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+
+    # Relationships
+    chunk: Mapped["DocumentChunk"] = relationship("DocumentChunk")
+    strategy: Mapped["Strategy | None"] = relationship("Strategy")
+    strategy_rule: Mapped["StrategyRule | None"] = relationship("StrategyRule")
+    concept: Mapped["Concept | None"] = relationship("Concept")
+
+    def __repr__(self) -> str:
+        return f"<Evidence(id={self.id}, chunk_id={self.chunk_id})>"
+
+
+class Hypothesis(Base):
+    """Represents a testable hypothesis generated from source material."""
+
+    __tablename__ = "hypotheses"
+
+    hypothesis_text: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    variables_required: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )  # List of required data variables
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="PROPOSED"
+    )  # PROPOSED, TESTED, VALIDATED, INVALIDATED
+    test_results: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True
+    )  # Results if tested
+
+    def __repr__(self) -> str:
+        return f"<Hypothesis(id={self.id})>"
