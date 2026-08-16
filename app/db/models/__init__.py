@@ -1,10 +1,64 @@
+"""Database models for concepts, strategies, rules, and evidence with full provenance tracking."""
+
 from datetime import datetime
-from enum import Enum
+from enum import Enum as PyEnum
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, MetaData, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    JSON,
+    MetaData,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+)
+
+
+class ReviewStatus(str, PyEnum):
+    """Review status for extracted strategies and concepts."""
+
+    PROPOSED = "PROPOSED"
+    REVIEWED = "REVIEWED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class RuleCategory(str, PyEnum):
+    """Category of a strategy rule."""
+
+    TECHNICAL = "technical"
+    FUNDAMENTAL = "fundamental"
+    MARKET_REGIME = "market_regime"
+    SETUP = "setup"
+    ENTRY = "entry"
+    CONFIRMATION = "confirmation"
+    EXIT = "exit"
+    STOP_LOSS = "stop_loss"
+    RISK_MANAGEMENT = "risk_management"
+    POSITION_SIZING = "position_sizing"
+    SUBJECTIVE = "subjective"
+    EXCEPTION = "exception"
+    OTHER = "other"
+
+
+class RuleClassification(str, PyEnum):
+    """Classification of rule certainty."""
+
+    OBJECTIVE = "objective"  # Can be precisely defined numerically
+    SUBJECTIVE = "subjective"  # Requires human judgment
+    UNRESOLVED = "unresolved"  # Unclear or incomplete in source
+
 
 convention = {
     "ix": "ix_%(column_0_label)s",
@@ -35,7 +89,7 @@ class Base(DeclarativeBase):
         }
 
 
-class DocumentType(str, Enum):
+class DocumentType(str, PyEnum):
     """Types of documents that can be ingested."""
 
     BOOK = "book"
@@ -54,8 +108,8 @@ class Document(Base):
 
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     author: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    document_type: Mapped[DocumentType] = mapped_column(
-        String(50), nullable=False, default=DocumentType.OTHER
+    document_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default=DocumentType.OTHER.value
     )
     publication_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
     filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -138,8 +192,13 @@ class Trader(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     known_for: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    era: Mapped[str | None] = mapped_column(String(100), nullable=True)  # e.g., "1980s-present"
+    era: Mapped[str | None] = mapped_column(String(100), nullable=True)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    # Relationships
+    strategies = relationship(
+        "Strategy", back_populates="trader", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Trader(id={self.id}, name='{self.name}')>"
@@ -154,41 +213,95 @@ class Concept(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str] = mapped_column(
         String(50), nullable=False, default="other"
-    )  # technical, fundamental, risk_management, market_regime, psychology, other
+    )
     review_status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="PROPOSED"
-    )  # PROPOSED, REVIEWED, APPROVED, REJECTED
+        String(20), nullable=False, default=ReviewStatus.PROPOSED.value
+    )
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
-    # Relationships - many-to-many for related concepts
-    related_concepts: Mapped[list["Concept"]] = relationship(
-        "Concept",
-        secondary="concept_relationships",
-        primaryjoin="and_(Concept.id==concept_relationships.c.concept_id)",
-        secondaryjoin="and_(Concept.id==concept_relationships.c.related_concept_id)",
+    # Relationships
+    evidence = relationship(
+        "ConceptEvidence", back_populates="concept", cascade="all, delete-orphan"
+    )
+    related_as_source = relationship(
+        "ConceptRelation",
+        foreign_keys="ConceptRelation.source_concept_id",
+        back_populates="source_concept",
+        cascade="all, delete-orphan",
+    )
+    related_as_target = relationship(
+        "ConceptRelation",
+        foreign_keys="ConceptRelation.target_concept_id",
+        back_populates="target_concept",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
         return f"<Concept(id={self.id}, name='{self.name}')>"
 
 
-class ConceptRelationship(Base):
-    """Junction table for concept relationships."""
+class ConceptEvidence(Base):
+    """Links a concept to supporting document chunks (provenance)."""
 
-    __tablename__ = "concept_relationships"
+    __tablename__ = "concept_evidence"
 
     concept_id: Mapped[int] = mapped_column(
-        ForeignKey("concepts.id", ondelete="CASCADE"),
-        primary_key=True,
-        index=True,
+        ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    related_concept_id: Mapped[int] = mapped_column(
-        ForeignKey("concepts.id", ondelete="CASCADE"),
-        primary_key=True,
-        index=True,
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    relationship_type: Mapped[str | None] = mapped_column(
-        String(50), nullable=True
-    )  # e.g., "related_to", "broader", "narrower"
+    relevance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("concept_id", "chunk_id", name="uq_concept_chunk"),
+    )
+
+    # Relationships
+    concept = relationship("Concept", back_populates="evidence")
+    chunk = relationship("DocumentChunk", backref="concept_evidence")
+
+    def __repr__(self) -> str:
+        return f"<ConceptEvidence(concept_id={self.concept_id}, chunk_id={self.chunk_id})>"
+
+
+class ConceptRelation(Base):
+    """Represents relationships between concepts."""
+
+    __tablename__ = "concept_relations"
+
+    source_concept_id: Mapped[int] = mapped_column(
+        ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    target_concept_id: Mapped[int] = mapped_column(
+        ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    relation_type: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_concept_id",
+            "target_concept_id",
+            "relation_type",
+            name="uq_concept_relation",
+        ),
+    )
+
+    # Relationships
+    source_concept = relationship(
+        "Concept",
+        foreign_keys=[source_concept_id],
+        back_populates="related_as_source",
+    )
+    target_concept = relationship(
+        "Concept",
+        foreign_keys=[target_concept_id],
+        back_populates="related_as_target",
+    )
+
+    def __repr__(self) -> str:
+        return f"<ConceptRelation({self.relation_type})>"
 
 
 class Strategy(Base):
@@ -196,52 +309,31 @@ class Strategy(Base):
 
     __tablename__ = "strategies"
 
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     trader_id: Mapped[int | None] = mapped_column(
         ForeignKey("traders.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    timeframe: Mapped[str | None] = mapped_column(
-        String(50), nullable=True
-    )  # e.g., "daily", "weekly", "intraday"
-    strategy_type: Mapped[str | None] = mapped_column(
-        String(50), nullable=True
-    )  # e.g., "momentum", "breakout", "trend_following"
+    timeframe: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    strategy_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     philosophy: Mapped[str | None] = mapped_column(Text, nullable=True)
-    confidence: Mapped[float | None] = mapped_column(nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     review_status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="PROPOSED"
-    )  # PROPOSED, REVIEWED, APPROVED, REJECTED
+        String(20), nullable=False, default=ReviewStatus.PROPOSED.value
+    )
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Relationships
-    trader: Mapped["Trader | None"] = relationship("Trader")
+    trader = relationship("Trader", back_populates="strategies")
+    rules = relationship(
+        "StrategyRule", back_populates="strategy", cascade="all, delete-orphan"
+    )
+    evidence = relationship(
+        "StrategyEvidence", back_populates="strategy", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Strategy(id={self.id}, name='{self.name}')>"
-
-
-class RuleClassification(str, Enum):
-    """Classification of how well a rule can be formalized."""
-
-    OBJECTIVE = "objective"  # Can be precisely defined numerically
-    SUBJECTIVE = "subjective"  # Requires human judgment
-    UNRESOLVED = "unresolved"  # Unclear or incomplete in source
-
-
-class RuleCategory(str, Enum):
-    """Category of trading rule."""
-
-    TECHNICAL = "technical"
-    FUNDAMENTAL = "fundamental"
-    MARKET_REGIME = "market_regime"
-    RISK_MANAGEMENT = "risk_management"
-    POSITION_SIZING = "position_sizing"
-    ENTRY = "entry"
-    EXIT = "exit"
-    STOP_LOSS = "stop_loss"
-    CONFIRMATION = "confirmation"
-    SETUP = "setup"
-    OTHER = "other"
 
 
 class StrategyRule(Base):
@@ -259,61 +351,69 @@ class StrategyRule(Base):
     classification: Mapped[str] = mapped_column(
         String(20), nullable=False, default=RuleClassification.UNRESOLVED.value
     )
-    numeric_definition: Mapped[str | None] = mapped_column(
-        Text, nullable=True
-    )  # Precise numeric rule if applicable
+    structured_data: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
     rule_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Relationships
+    strategy = relationship("Strategy", back_populates="rules")
+    evidence = relationship(
+        "RuleEvidence", back_populates="rule", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<StrategyRule(id={self.id}, strategy_id={self.strategy_id})>"
 
 
-class EvidenceType(str, Enum):
-    """Type of evidence link."""
+class StrategyEvidence(Base):
+    """Links a strategy to supporting document chunks (provenance)."""
 
-    SUPPORTS = "supports"
-    CONTRADICTS = "contradicts"
-    ELABORATES = "elaborates"
-    DEFINES = "defines"
+    __tablename__ = "strategy_evidence"
 
-
-class Evidence(Base):
-    """Links extracted knowledge to source document chunks (provenance)."""
-
-    __tablename__ = "evidence"
-
+    strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("strategies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     chunk_id: Mapped[int] = mapped_column(
         ForeignKey("document_chunks.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    evidence_type: Mapped[str] = mapped_column(
-        String(20), nullable=False, default=EvidenceType.SUPPORTS.value
-    )
-    quote: Mapped[str | None] = mapped_column(
-        Text, nullable=True
-    )  # Exact quote from the chunk
-    context: Mapped[str | None] = mapped_column(
-        Text, nullable=True
-    )  # Additional context around the quote
+    relevance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Polymorphic relationships - what this evidence supports
-    strategy_id: Mapped[int | None] = mapped_column(
-        ForeignKey("strategies.id", ondelete="CASCADE"), nullable=True, index=True
-    )
-    strategy_rule_id: Mapped[int | None] = mapped_column(
-        ForeignKey("strategy_rules.id", ondelete="CASCADE"), nullable=True, index=True
-    )
-    concept_id: Mapped[int | None] = mapped_column(
-        ForeignKey("concepts.id", ondelete="CASCADE"), nullable=True, index=True
+    __table_args__ = (
+        UniqueConstraint("strategy_id", "chunk_id", name="uq_strategy_chunk"),
     )
 
     # Relationships
-    chunk: Mapped["DocumentChunk"] = relationship("DocumentChunk")
-    strategy: Mapped["Strategy | None"] = relationship("Strategy")
-    strategy_rule: Mapped["StrategyRule | None"] = relationship("StrategyRule")
-    concept: Mapped["Concept | None"] = relationship("Concept")
+    strategy = relationship("Strategy", back_populates="evidence")
+    chunk = relationship("DocumentChunk", backref="strategy_evidence")
 
     def __repr__(self) -> str:
-        return f"<Evidence(id={self.id}, chunk_id={self.chunk_id})>"
+        return f"<StrategyEvidence(strategy_id={self.strategy_id}, chunk_id={self.chunk_id})>"
+
+
+class RuleEvidence(Base):
+    """Links a strategy rule to supporting document chunks (provenance)."""
+
+    __tablename__ = "rule_evidence"
+
+    rule_id: Mapped[int] = mapped_column(
+        ForeignKey("strategy_rules.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    relevance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (UniqueConstraint("rule_id", "chunk_id", name="uq_rule_chunk"),)
+
+    # Relationships
+    rule = relationship("StrategyRule", back_populates="evidence")
+    chunk = relationship("DocumentChunk", backref="rule_evidence")
+
+    def __repr__(self) -> str:
+        return f"<RuleEvidence(rule_id={self.rule_id}, chunk_id={self.chunk_id})>"
 
 
 class Hypothesis(Base):
@@ -323,15 +423,45 @@ class Hypothesis(Base):
 
     hypothesis_text: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    variables_required: Mapped[list[str] | None] = mapped_column(
-        JSON, nullable=True
-    )  # List of required data variables
+    variables_required: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    source_strategy_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strategies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="PROPOSED"
-    )  # PROPOSED, TESTED, VALIDATED, INVALIDATED
-    test_results: Mapped[dict[str, Any] | None] = mapped_column(
-        JSON, nullable=True
-    )  # Results if tested
+    )
+    test_results: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    # Relationships
+    evidence = relationship(
+        "HypothesisEvidence", back_populates="hypothesis", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Hypothesis(id={self.id})>"
+
+
+class HypothesisEvidence(Base):
+    """Links a hypothesis to supporting document chunks (provenance)."""
+
+    __tablename__ = "hypothesis_evidence"
+
+    hypothesis_id: Mapped[int] = mapped_column(
+        ForeignKey("hypotheses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    relevance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("hypothesis_id", "chunk_id", name="uq_hypothesis_chunk"),
+    )
+
+    # Relationships
+    hypothesis = relationship("Hypothesis", back_populates="evidence")
+    chunk = relationship("DocumentChunk", backref="hypothesis_evidence")
+
+    def __repr__(self) -> str:
+        return f"<HypothesisEvidence(hypothesis_id={self.hypothesis_id}, chunk_id={self.chunk_id})>"
